@@ -7,7 +7,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { User } from './entities/user.entity';
 import { HashService } from '../hash/hash.service';
-import { Like, Repository } from 'typeorm';
+import { ILike, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindUserDto } from './dto/find-user.dto';
 
@@ -22,6 +22,24 @@ export class UsersService {
   async create(createUserDto: CreateUserDto) {
     const { email, username, password, avatar, about } = createUserDto;
 
+    const existingUserByUsername = await this.userRepository.findOne({
+      where: { username },
+    });
+    if (existingUserByUsername) {
+      throw new ConflictException(
+        'Пользователь с таким именем пользователя уже существует',
+      );
+    }
+
+    const existingUserByEmail = await this.userRepository.findOne({
+      where: { email },
+    });
+    if (existingUserByEmail) {
+      throw new ConflictException(
+        'Пользователь с таким адресом электронной почты уже существует',
+      );
+    }
+
     const hashedPassword = await this.hashService.hashPassword(password);
 
     const newUser = this.userRepository.create({
@@ -32,14 +50,35 @@ export class UsersService {
       password: hashedPassword,
     });
 
-    const savedUser = await this.userRepository.save(newUser);
-
-    return savedUser.toJSON();
+    try {
+      const savedUser = await this.userRepository.save(newUser);
+      return savedUser.toJSON();
+    } catch (error) {
+      if (error.code === '23505') {
+        if (error.detail?.includes('username')) {
+          throw new ConflictException(
+            'Пользователь с таким именем пользователя уже существует',
+          );
+        }
+        if (error.detail?.includes('email')) {
+          throw new ConflictException(
+            'Пользователь с таким адресом электронной почты уже существует',
+          );
+        }
+        throw new ConflictException(
+          'Пользователь с такими данными уже существует',
+        );
+      }
+      throw error;
+    }
   }
 
   async findOne(query: string, includePassword = false) {
     const user = await this.userRepository.findOne({
       where: { username: query },
+      select: includePassword
+        ? ['id', 'username', 'email', 'about', 'avatar', 'createdAt', 'updatedAt', 'password']
+        : undefined,
     });
 
     if (!user) {
@@ -54,8 +93,8 @@ export class UsersService {
 
     const users = await this.userRepository.find({
       where: [
-        { username: Like(`%${query.query}%`) },
-        { email: Like(`%${query.query}%`) },
+        { username: ILike(`%${query.query}%`) },
+        { email: ILike(`%${query.query}%`) },
       ],
     });
 
