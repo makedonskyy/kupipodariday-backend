@@ -76,9 +76,6 @@ export class UsersService {
   async findOne(query: string, includePassword = false) {
     const user = await this.userRepository.findOne({
       where: { username: query },
-      select: includePassword
-        ? ['id', 'username', 'email', 'about', 'avatar', 'createdAt', 'updatedAt', 'password']
-        : undefined,
     });
 
     if (!user) {
